@@ -2,7 +2,6 @@ import streamlit as st
 import requests  # For API requests
 import ollama  # For DeepSeek-R1 model
 from fuzzywuzzy import process
-import re
 import time
 
 # API Endpoint for fetching user data
@@ -42,31 +41,32 @@ def recommend_users_for_skills(required_skills, users):
                     break  # Include user if they match at least one skill
     recommended_users = sorted(recommended_users, key=lambda x: x["points"], reverse=True)[:5]  # Return top 5 users
     return recommended_users
-    """Find users who know at least one of the required skills."""
-    recommended_users = []
-    for user in users:
-        tech_skills = user.get("Tech-skills", {})  # Get user skills
-        if tech_skills:
-            for skill in required_skills:
-                match_score = process.extractOne(skill, tech_skills.keys())
-                if match_score and match_score[1] > 70:  # 70% similarity threshold
-                    recommended_users.append({
-                        "name": user.get("name", "Unknown"),
-                        "USN": user.get("USN", "No USN"),
-                        "points": user.get("points", 0),
-                        "matched_skill": match_score[0]
-                    })
-                    break  # Include user if they match at least one skill
-    recommended_users = sorted(recommended_users, key=lambda x: x["points"], reverse=True)[:5]  # Return top 5 users
-    return recommended_users
 
 def generate_response(prompt, users, mode):
     """Generate chatbot response based on selected mode."""
+
+    # Predefined responses
+    skill_nest_keywords = ["skill nest", "what is skill nest", "about skill nest"]
+    sutradhara_keywords = ["who are you", "what is sutradhara", "who is sutradhara"]
+
+    if any(keyword in prompt.lower() for keyword in skill_nest_keywords):
+        return (
+            "**Skill Nest** is a dynamic platform designed to foster collaboration and skill-sharing among students. "
+            "It helps users connect with peers based on their technical skills, allowing them to form teams, work on projects, "
+            "and enhance their knowledge in a supportive environment. 🚀"
+        )
+
+    if any(keyword in prompt.lower() for keyword in sutradhara_keywords):
+        return (
+            "**I am Sutradhara**, your intelligent chatbot assistant for Skill Nest! "
+            "My role is to guide you, answer your queries, and help you find the right members for your projects. 🤖"
+        )
+
     if mode == "Find Members":
         available_skills = set()
         for user in users:
             available_skills.update(user.get("Tech-skills", {}).keys())
-        
+
         required_skills = extract_skills_from_query(prompt, available_skills)
         if required_skills:
             suggestions = recommend_users_for_skills(required_skills, users)
