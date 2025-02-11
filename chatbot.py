@@ -6,7 +6,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 
 # ✅ Set up Streamlit page
-st.set_page_config(page_title="Skill Nest Chatbot", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="Skill Nest Chatbot", page_icon="🤖", layout="wide")
 
 # ✅ Load API key
 load_dotenv()
@@ -25,7 +25,7 @@ def fetch_users():
     """Fetch users dynamically from API using POST request."""
     try:
         response = requests.post(USER_DATA_API, json=API_PAYLOAD)
-        response.raise_for_status()  # Raise an error if request fails
+        response.raise_for_status()  
         data = response.json()
         return data.get("data", []) if "data" in data else []
     except requests.exceptions.RequestException as e:
@@ -42,11 +42,18 @@ def recommend_users_for_skills(required_skills, users):
     
     for user in users:
         tech_skills = user.get("Tech-skills", {})
-        if not tech_skills:
-            continue
+        soft_skills = user.get("Soft-skills", {})
+
+        # Convert lists to sets for easy lookup
+        if isinstance(tech_skills, list):
+            tech_skills = {skill: 1 for skill in tech_skills}
+        if isinstance(soft_skills, list):
+            soft_skills = {skill: 1 for skill in soft_skills}
+
+        combined_skills = {**tech_skills, **soft_skills}  # Merge both skill types
 
         for skill in required_skills:
-            if skill.lower() in [s.lower() for s in tech_skills.keys()]:  # Case-insensitive match
+            if skill.lower() in [s.lower() for s in combined_skills.keys()]:
                 recommended_users.append({
                     "name": user.get("name", "Unknown"),
                     "USN": user.get("USN", "No USN"),
@@ -54,8 +61,7 @@ def recommend_users_for_skills(required_skills, users):
                     "matched_skill": skill
                 })
                 break  # Stop checking more skills if a match is found
-    
-    # Sort by points (higher points first) and return top 5
+
     return sorted(recommended_users, key=lambda x: x["points"], reverse=True)[:5]
 
 def generate_response(prompt, users, mode):
@@ -70,8 +76,21 @@ def generate_response(prompt, users, mode):
         return "**I am Sutradhara**, your chatbot assistant for Skill Nest! 🤖"
 
     if mode == "Find Members":
-        available_skills = {skill.lower() for user in users for skill in user.get("Tech-skills", {}).keys()}
-        
+        available_skills = set()
+        for user in users:
+            tech_skills = user.get("Tech-skills", {})
+            soft_skills = user.get("Soft-skills", {})
+
+            if isinstance(tech_skills, dict):
+                available_skills.update(skill.lower() for skill in tech_skills.keys())
+            elif isinstance(tech_skills, list):
+                available_skills.update(skill.lower() for skill in tech_skills)
+
+            if isinstance(soft_skills, dict):
+                available_skills.update(skill.lower() for skill in soft_skills.keys())
+            elif isinstance(soft_skills, list):
+                available_skills.update(skill.lower() for skill in soft_skills)
+
         required_skills = extract_skills_from_query(prompt, available_skills)
         if required_skills:
             suggestions = recommend_users_for_skills(required_skills, users)
@@ -94,10 +113,29 @@ def generate_response(prompt, users, mode):
 st.title("🧭 सूत्रधार (Sūtradhāra)")
 st.write("👋 Welcome! Choose a mode below:")
 
+# 🔥 Sidebar for About & Help
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/4712/4712032.png", width=100)
+    st.title("🔹 About Sutradhara")
+    st.write("""
+        **Sutradhara** is an AI-powered assistant for **Skill Nest**,  
+        helping students find skilled collaborators and answer questions. 🤖  
+    """)
+    
+    st.title("🆘 Help")
+    st.write("""
+        **How to Use:**
+        - Select **General Conversation** for chatbot Q&A.
+        - Select **Find Members** to search for skilled people.
+        - Type your query in the text box and click **Submit**.
+    """)
+
+# User Input & Mode Selection
 mode = st.radio("Select Mode:", ["General Conversation", "Find Members"], index=1)
 user_input = st.text_input("💬 Enter your message:", key="user_message")
 users = fetch_users()  # Fetch users on load
 
+# ✅ Display Response
 if st.button("Submit") or st.session_state.get("send_clicked", False):
     loader_text = "⏳ Generating response..." if mode == "General Conversation" else "🔍 Finding best members for you..."
     with st.spinner(loader_text):
