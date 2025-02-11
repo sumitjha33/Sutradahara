@@ -5,8 +5,12 @@ import os
 import time
 from fuzzywuzzy import process
 
-# Load API key securely
-GEMINI_API_KEY = "AIzaSyCFGmN92k3xPex-veENTvcaOzzpA-6G4Rk"  # Replace this with your new API key
+# Load API key securely from environment variable
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Set this variable in your system
+if not GEMINI_API_KEY:
+    st.error("API key not found. Please set the GEMINI_API_KEY environment variable.")
+    st.stop()
+
 genai.configure(api_key=GEMINI_API_KEY)
 
 # API Endpoint for fetching user data
