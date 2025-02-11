@@ -1,15 +1,14 @@
 import streamlit as st
 import os
 import time
-import requests  # For API requests
-import google.generativeai as genai  # Gemini API
-from fuzzywuzzy import process
-from dotenv import load_dotenv  # For loading environment variables
+import requests
+import google.generativeai as genai
+from dotenv import load_dotenv
 
-# ✅ Move this to the first Streamlit command
+# ✅ Set up Streamlit page
 st.set_page_config(page_title="Skill Nest Chatbot", page_icon="🤖", layout="centered")
 
-# ✅ Load API key from .env file
+# ✅ Load API key
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
@@ -18,59 +17,61 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# API Endpoint for fetching user data
+# ✅ API Endpoint & Payload
 USER_DATA_API = "https://skill-nest-backend.onrender.com/get_all_users_data"
+API_PAYLOAD = {"batch_id": "batch_001"}
 
 def fetch_users():
-    """Fetch users dynamically from API."""
-    response = requests.get(USER_DATA_API)
-    if response.status_code != 200:
+    """Fetch users dynamically from API using POST request."""
+    try:
+        response = requests.post(USER_DATA_API, json=API_PAYLOAD)
+        response.raise_for_status()  # Raise an error if request fails
+        data = response.json()
+        return data.get("data", []) if "data" in data else []
+    except requests.exceptions.RequestException as e:
+        st.error(f"⚠️ Error fetching users: {e}")
         return []
-    return response.json().get("data", [])
 
 def extract_skills_from_query(query, available_skills):
-    """Extract skills from user input based on available skills in database."""
-    detected_skills = [skill for skill in available_skills if skill.lower() in query.lower()]
-    return detected_skills
+    """Extract skills from user input based on available skills."""
+    return [skill for skill in available_skills if skill.lower() in query.lower()]
 
 def recommend_users_for_skills(required_skills, users):
-    """Find users who know at least one of the required skills, ensuring C++ and C# are not confused."""
+    """Find users with at least one of the required skills."""
     recommended_users = []
+    
     for user in users:
         tech_skills = user.get("Tech-skills", {})
-        if tech_skills:
-            for skill in required_skills:
-                if skill.lower() == "c++" and "c#" in tech_skills:
-                    continue  # Skip if looking for C++ but user has C#
-                if skill.lower() == "c#" and "c++" in tech_skills:
-                    continue  # Skip if looking for C# but user has C++
-                if skill in tech_skills:
-                    recommended_users.append({
-                        "name": user.get("name", "Unknown"),
-                        "USN": user.get("USN", "No USN"),
-                        "points": user.get("points", 0),
-                        "matched_skill": skill
-                    })
-                    break  
-    recommended_users = sorted(recommended_users, key=lambda x: x["points"], reverse=True)[:5]
-    return recommended_users
+        if not tech_skills:
+            continue
+
+        for skill in required_skills:
+            if skill.lower() in [s.lower() for s in tech_skills.keys()]:  # Case-insensitive match
+                recommended_users.append({
+                    "name": user.get("name", "Unknown"),
+                    "USN": user.get("USN", "No USN"),
+                    "points": user.get("points", 0),
+                    "matched_skill": skill
+                })
+                break  # Stop checking more skills if a match is found
+    
+    # Sort by points (higher points first) and return top 5
+    return sorted(recommended_users, key=lambda x: x["points"], reverse=True)[:5]
 
 def generate_response(prompt, users, mode):
-    """Generate chatbot response based on selected mode."""
+    """Generate chatbot response based on the selected mode."""
     skill_nest_keywords = ["skill nest", "what is skill nest", "about skill nest"]
     sutradhara_keywords = ["who are you", "what is sutradhara", "who is sutradhara"]
 
     if any(keyword in prompt.lower() for keyword in skill_nest_keywords):
-        return ("**Skill Nest** is a dynamic platform designed to foster collaboration and skill-sharing among students. 🚀")
+        return "**Skill Nest** is a platform for collaboration and skill-sharing among students. 🚀"
 
     if any(keyword in prompt.lower() for keyword in sutradhara_keywords):
-        return ("**I am Sutradhara**, your intelligent chatbot assistant for Skill Nest! 🤖")
+        return "**I am Sutradhara**, your chatbot assistant for Skill Nest! 🤖"
 
     if mode == "Find Members":
-        available_skills = set()
-        for user in users:
-            available_skills.update(user.get("Tech-skills", {}).keys())
-
+        available_skills = {skill.lower() for user in users for skill in user.get("Tech-skills", {}).keys()}
+        
         required_skills = extract_skills_from_query(prompt, available_skills)
         if required_skills:
             suggestions = recommend_users_for_skills(required_skills, users)
@@ -81,7 +82,7 @@ def generate_response(prompt, users, mode):
             else:
                 response = "❌ No members found with the requested skills. Try another skill or refine your request."
         else:
-            response = "❓ No matching skills found in the database. Please specify valid skills from our system!"
+            response = "❌ No matching skills found in the database."
     else:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content([{"text": prompt}])
@@ -89,12 +90,13 @@ def generate_response(prompt, users, mode):
 
     return response
 
+# ✅ Streamlit UI
 st.title("🧭 सूत्रधार (Sūtradhāra)")
 st.write("👋 Welcome! Choose a mode below:")
 
 mode = st.radio("Select Mode:", ["General Conversation", "Find Members"], index=1)
 user_input = st.text_input("💬 Enter your message:", key="user_message")
-users = fetch_users()
+users = fetch_users()  # Fetch users on load
 
 if st.button("Submit") or st.session_state.get("send_clicked", False):
     loader_text = "⏳ Generating response..." if mode == "General Conversation" else "🔍 Finding best members for you..."
