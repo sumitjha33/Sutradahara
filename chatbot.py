@@ -4,6 +4,7 @@ import time
 import requests
 import google.generativeai as genai
 from dotenv import load_dotenv
+import re
 
 # ✅ Set up Streamlit page
 st.set_page_config(page_title="Skill Nest Chatbot", page_icon="🤖", layout="wide")
@@ -25,16 +26,12 @@ def fetch_users():
     """Fetch users dynamically from API using POST request."""
     try:
         response = requests.post(USER_DATA_API, json=API_PAYLOAD)
-        response.raise_for_status()  
+        response.raise_for_status()
         data = response.json()
         return data.get("data", []) if "data" in data else []
     except requests.exceptions.RequestException as e:
         st.error(f"⚠️ Error fetching users: {e}")
         return []
-
-def extract_skills_from_query(query, available_skills):
-    """Extract skills from user input based on available skills."""
-    return [skill for skill in available_skills if skill.lower() in query.lower()]
 
 def normalize_skills(skills):
     """Convert various skill formats (list, dict) into a standardized list."""
@@ -45,57 +42,52 @@ def normalize_skills(skills):
     else:
         return []
 
-def recommend_users_for_skills(required_skills, users):
-    """Find users with at least one of the required skills."""
+def recommend_users_for_skills(skill, users, max_members=5):
+    """Find users with the requested skill, limited to max_members."""
     recommended_users = []
-    
+
     for user in users:
         tech_skills = normalize_skills(user.get("Tech-skills", []))
         soft_skills = normalize_skills(user.get("Soft-skills", []))
-        
-        # Combine both skill types
         combined_skills = set(tech_skills + soft_skills)
 
-        # Check for skill matches
-        for skill in required_skills:
-            if skill.lower() in [s.lower() for s in combined_skills]:
-                recommended_users.append({
-                    "name": user.get("name", "Unknown"),
-                    "USN": user.get("USN", "No USN"),
-                    "points": user.get("points", 0),
-                    "matched_skill": skill
-                })
-                break  # Stop checking more skills if a match is found
+        if skill.lower() in [s.lower() for s in combined_skills]:
+            recommended_users.append({
+                "name": user.get("name", "Unknown"),
+                "USN": user.get("USN", "No USN"),
+                "points": user.get("points", 0)
+            })
 
-    return sorted(recommended_users, key=lambda x: x["points"], reverse=True)[:5]
+    return sorted(recommended_users, key=lambda x: x["points"], reverse=True)[:max_members]
+
+def extract_member_count(prompt):
+    """Extract the number of members requested from the user's prompt."""
+    match = re.search(r"(\d+)\s+members", prompt.lower())
+    return int(match.group(1)) if match else 5
 
 def generate_response(prompt, users, mode):
     """Generate chatbot response based on the selected mode."""
-    skill_nest_keywords = ["skill nest", "what is skill nest", "about skill nest"]
-    sutradhara_keywords = ["who are you", "what is sutradhara", "who is sutradhara"]
-
-    if any(keyword in prompt.lower() for keyword in skill_nest_keywords):
-        return "**Skill Nest** is a platform for collaboration and skill-sharing among students. 🚀"
-
-    if any(keyword in prompt.lower() for keyword in sutradhara_keywords):
-        return "**I am Sutradhara**, your chatbot assistant for Skill Nest! 🤖"
-
     if mode == "Find Members":
+        # Extract skills and requested member count
         available_skills = set()
         for user in users:
             tech_skills = normalize_skills(user.get("Tech-skills", []))
             soft_skills = normalize_skills(user.get("Soft-skills", []))
             available_skills.update(skill.lower() for skill in tech_skills + soft_skills)
 
-        required_skills = extract_skills_from_query(prompt, available_skills)
+        required_skills = [skill for skill in available_skills if skill in prompt.lower()]
+        member_count = extract_member_count(prompt)
+
         if required_skills:
-            suggestions = recommend_users_for_skills(required_skills, users)
-            if suggestions:
-                response = "🎯 **Top Experts Ready to Help!**\n\n"
-                for user in suggestions:
-                    response += f"🔥 **{user['name']}** \n📌 *USN:* `{user['USN']}` \n🏆 *Points:* `{user['points']}`\n💡 *Matched Skill:* `{user['matched_skill']}`\n\n"
-            else:
-                response = "❌ No members found with the requested skills. Try another skill or refine your request."
+            response = "🎯 **Members Categorized by Skills:**\n\n"
+            for skill in required_skills:
+                response += f"🔹 **For {skill.capitalize()}:**\n\n"  # Bold skill name and add a line break
+                suggestions = recommend_users_for_skills(skill, users, member_count)
+                if suggestions:
+                    for user in suggestions:
+                        response += f"🔥 **{user['name']}** \n📌 *USN:* `{user['USN']}` \n🏆 *Points:* `{user['points']}`\n\n"
+                else:
+                    response += "❌ No members found for this skill.\n\n"
         else:
             response = "❌ No matching skills found in the database."
     else:
