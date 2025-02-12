@@ -36,24 +36,29 @@ def extract_skills_from_query(query, available_skills):
     """Extract skills from user input based on available skills."""
     return [skill for skill in available_skills if skill.lower() in query.lower()]
 
+def normalize_skills(skills):
+    """Convert various skill formats (list, dict) into a standardized list."""
+    if isinstance(skills, dict):
+        return list(skills.keys())
+    elif isinstance(skills, list):
+        return skills
+    else:
+        return []
+
 def recommend_users_for_skills(required_skills, users):
     """Find users with at least one of the required skills."""
     recommended_users = []
     
     for user in users:
-        tech_skills = user.get("Tech-skills", {})
-        soft_skills = user.get("Soft-skills", {})
+        tech_skills = normalize_skills(user.get("Tech-skills", []))
+        soft_skills = normalize_skills(user.get("Soft-skills", []))
+        
+        # Combine both skill types
+        combined_skills = set(tech_skills + soft_skills)
 
-        # Convert lists to sets for easy lookup
-        if isinstance(tech_skills, list):
-            tech_skills = {skill: 1 for skill in tech_skills}
-        if isinstance(soft_skills, list):
-            soft_skills = {skill: 1 for skill in soft_skills}
-
-        combined_skills = {**tech_skills, **soft_skills}  # Merge both skill types
-
+        # Check for skill matches
         for skill in required_skills:
-            if skill.lower() in [s.lower() for s in combined_skills.keys()]:
+            if skill.lower() in [s.lower() for s in combined_skills]:
                 recommended_users.append({
                     "name": user.get("name", "Unknown"),
                     "USN": user.get("USN", "No USN"),
@@ -78,18 +83,9 @@ def generate_response(prompt, users, mode):
     if mode == "Find Members":
         available_skills = set()
         for user in users:
-            tech_skills = user.get("Tech-skills", {})
-            soft_skills = user.get("Soft-skills", {})
-
-            if isinstance(tech_skills, dict):
-                available_skills.update(skill.lower() for skill in tech_skills.keys())
-            elif isinstance(tech_skills, list):
-                available_skills.update(skill.lower() for skill in tech_skills)
-
-            if isinstance(soft_skills, dict):
-                available_skills.update(skill.lower() for skill in soft_skills.keys())
-            elif isinstance(soft_skills, list):
-                available_skills.update(skill.lower() for skill in soft_skills)
+            tech_skills = normalize_skills(user.get("Tech-skills", []))
+            soft_skills = normalize_skills(user.get("Soft-skills", []))
+            available_skills.update(skill.lower() for skill in tech_skills + soft_skills)
 
         required_skills = extract_skills_from_query(prompt, available_skills)
         if required_skills:
