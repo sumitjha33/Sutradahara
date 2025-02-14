@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import re
 
 # ✅ Set up Streamlit page with custom icon
-st.set_page_config(page_title="Skill Nest Chatbot", page_icon="D:/Sutradhara/WhatsApp Image 2025-02-14 at 11.23.35_47e0abbb.jpg", layout="wide")
+st.set_page_config(page_title="Skill Nest Chatbot", page_icon="D:/Sutradhara/image/WhatsApp Image 2025-02-14 at 11.23.35_47e0abbb.jpg", layout="wide")
 
 # ✅ Load API key
 load_dotenv()
