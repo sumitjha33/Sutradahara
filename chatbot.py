@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import re
 
 # ✅ Set up Streamlit page with custom icon
-st.set_page_config(page_title="Skill Nest Chatbot", page_icon="D:/Sutradhara/image/WhatsApp Image 2025-02-14 at 11.23.35_47e0abbb.jpg", layout="wide")
+st.set_page_config(page_title="Skill Nest Chatbot", page_icon="image/WhatsApp Image 2025-02-14 at 11.23.35_47e0abbb.jpg", layout="wide")
 
 # ✅ Load API key
 load_dotenv()
@@ -33,6 +33,7 @@ def fetch_users():
         st.error(f"⚠️ Error fetching users: {e}")
         return []
 
+# ✅ Utility functions for skills and recommendations
 def normalize_skills(skills):
     """Convert various skill formats (list, dict) into a standardized list."""
     if isinstance(skills, dict):
@@ -45,7 +46,6 @@ def normalize_skills(skills):
 def recommend_users_for_skills(skill, users, max_members=5):
     """Find users with the requested skill, limited to max_members."""
     recommended_users = []
-
     for user in users:
         tech_skills = normalize_skills(user.get("Tech-skills", []))
         soft_skills = normalize_skills(user.get("Soft-skills", []))
@@ -57,22 +57,54 @@ def recommend_users_for_skills(skill, users, max_members=5):
                 "USN": user.get("USN", "No USN"),
                 "points": user.get("points", 0)
             })
-
     return sorted(recommended_users, key=lambda x: x["points"], reverse=True)[:max_members]
+
+# ✅ Extract last question and relationships
+def get_last_question():
+    """Retrieve the last valid question from the chat history."""
+    if len(st.session_state["history"]) > 1:
+        return st.session_state["history"][-2]["prompt"]
+    return "No previous question found."
 
 def extract_member_count(prompt):
     """Extract the number of members requested from the user's prompt."""
     match = re.search(r"(\d+)\s+members", prompt.lower())
     return int(match.group(1)) if match else 5
 
+relationships = {}
+
+def extract_relationship(input_text):
+    """Extracts and stores relationships dynamically from user input."""
+    words = input_text.split()
+    if "is" in words and len(words) >= 4:
+        subject = words[0]
+        relationship_type = " ".join(words[2:4])
+        target = words[-1]
+        if relationship_type not in relationships:
+            relationships[relationship_type] = {}
+        relationships[relationship_type][target] = subject
+        return f"Got it! {subject} is {relationship_type} {target}."
+    return "I didn't understand the relationship format."
+
+def get_relationship_response(input_text):
+    """Handles questions like 'Who is to the right of X?' by checking stored relationships."""
+    words = input_text.split()
+    if len(words) >= 6 and words[0].lower() == "who" and words[1] == "is":
+        relationship_type = " ".join(words[3:5])
+        target = words[-1].replace("?", "")
+        if relationship_type in relationships and target in relationships[relationship_type]:
+            return f"{relationships[relationship_type][target]} is {relationship_type} {target}."
+    return "I don't have enough information for that."
+
 def generate_response(prompt, users, mode):
     """Generate chatbot response based on the selected mode."""
-    if prompt.strip().lower() in ["who are you?", "who are you","who made you?","who made you"]:
-        # Custom response for "Who are you?" question
+    if prompt.strip().lower() == "what was my last question":
+        return f"Your last question was: '{get_last_question()}'"
+
+    if prompt.strip().lower() in ["who are you?", "who made you?"]:
         return "I am a large language model made by Google and trained by Sumit Kumar."
 
     if mode == "Find Members":
-        # Extract skills and requested member count
         available_skills = set()
         for user in users:
             tech_skills = normalize_skills(user.get("Tech-skills", []))
@@ -94,13 +126,16 @@ def generate_response(prompt, users, mode):
                     response += "❌ No members found for this skill.\n\n"
         else:
             response = "❌ No matching skills found in the database."
+    elif "is" in prompt and "of" in prompt:
+        response = extract_relationship(prompt)
+    elif "who is" in prompt:
+        response = get_relationship_response(prompt)
     else:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content([{"text": prompt}])
         response = response.text if response else "Sorry, I couldn't process that request."
 
     return response
-
 
 # ✅ Initialize history
 if "history" not in st.session_state:
@@ -118,65 +153,41 @@ st.write("👋 Welcome! Choose a mode below:")
 
 # User Input & Mode Selection
 mode = st.radio("Select Mode:", ["General Conversation", "Find Members"], index=1)
-user_input = st.text_input("💬 Enter your message:", key="user_message")
-users = fetch_users()  # Fetch users on load
+user_input = st.text_area("💬 Enter your message:", key="user_message", height=75, max_chars=5000)
+
+users = fetch_users()
 
 # ✅ Display Response
-if st.button("Submit") or st.session_state.get("send_clicked", False):
-    loader_text = "⏳ Generating response..." if mode == "General Conversation" else "🔍 Finding best members for you..."
-    with st.spinner(loader_text):
-        time.sleep(2)
-        response_text = generate_response(user_input, users, mode)
-        st.markdown("### 🧭 सूत्रधार Response:")
-        st.markdown(response_text, unsafe_allow_html=True)
-
-    # Add to history
-    st.session_state["history"].append({
-        "prompt": user_input,
-        "response": response_text,
-        "mode": mode
-    })
-    st.session_state["send_clicked"] = False
-
+if st.button("Submit"):
+    if user_input.strip():
+        loader_text = "⏳ Generating response..." if mode == "General Conversation" else "🔍 Finding best members for you..."
+        with st.spinner(loader_text):
+            time.sleep(2)
+            response_text = generate_response(user_input, users, mode)
+            st.markdown("### 🧭 सूत्रधार Response:")
+            st.markdown(response_text, unsafe_allow_html=True)
+            add_to_history(user_input, response_text, mode)
+    else:
+        st.warning("⚠️ Please enter a valid message before submitting.")
 
 # 🔍 Right Sidebar for History
 st.sidebar.header("📜 Chat History")
 if st.session_state["history"]:
     for i, entry in enumerate(reversed(st.session_state["history"])):
-        # Ensure unique keys for sidebar buttons
         if st.sidebar.button(f"Q{i+1}: {entry['prompt']}", key=f"sidebar_history_{i}"):
-            # Expand the conversation view in the sidebar
-            st.sidebar.write(f"**User (Mode: {entry['mode']})**: {entry['prompt']}")
-            st.sidebar.write(f"**Sutradhāra**: {entry['response']}")
+            st.session_state["user_message"] = entry['prompt']
 else:
     st.sidebar.write("No history available yet.")
 
-# 👉 About Section
+# 🆘 Help Section in Sidebar
+with st.sidebar.expander("🆘 Help", expanded=False):
+    st.write("""
+    - **General Conversation:** Ask any question for a response.
+    - **Find Members:** Enter a skill to find suitable members.
+    - **What was my last question:** Ask this to recall your previous valid question.
+    """)
+
 with st.sidebar.expander("📖 About Skill Nest", expanded=False):
     st.write("""
-    **Skill Nest** is a dynamic platform designed to connect learners and professionals
-    with relevant resources and collaborators. It helps users enhance their skills,
-    find team members for projects, and build strong communities for learning.
-
-    **Features**:
-    - Connect with members who share your interests.
-    - Recommend project collaborators based on required skills.
-    - A versatile chatbot for general queries and skill-based searches.
+    **Skill Nest** is a dynamic platform designed to connect learners and professionals, offering skill-based recommendations and collaborative project suggestions.
     """)
-
-# 🙋 Help Section
-with st.sidebar.expander("❓ Help", expanded=False):
-    st.write("""
-    ### How to Use Sūtradhāra:
-    1. **Select a Mode**: Choose between 'General Conversation' or 'Find Members'.
-    2. **Enter Your Message**: Type in your query or skill request.
-    3. **Submit**: Click the "Submit" button to generate a response or find members.
-    4. **View History**: Check previous queries and responses under "Chat History".
-    
-    **Tips**:
-    - Be specific in your requests for better recommendations.
-    - Use keywords related to skills to get accurate suggestions.
-    - If you encounter errors, refresh the page or check your internet connection.
-    """)
-
-# You can add more sections or enhance these as per your requirements!
