@@ -153,12 +153,14 @@ st.write("👋 Welcome! Choose a mode below:")
 
 # User Input & Mode Selection
 mode = st.radio("Select Mode:", ["General Conversation", "Find Members"], index=1)
-user_input = st.text_area("💬 Enter your message:", key="user_message", height=75, max_chars=5000)
+user_input = st.text_area(
+    "💬 Enter your message:", key="user_message", height=150, max_chars=5000, placeholder="Type your message here..."
+)
 
 users = fetch_users()
 
 # ✅ Display Response
-if st.button("Submit"):
+if st.button("Submit", type="primary"):
     if user_input.strip():
         loader_text = "⏳ Generating response..." if mode == "General Conversation" else "🔍 Finding best members for you..."
         with st.spinner(loader_text):
